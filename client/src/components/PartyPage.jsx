@@ -5,6 +5,8 @@ function PartyPage() {
   const { id: partyId } = useParams()
   const [attempts, setAttempts] = useState([])
   const [partyInfo, setPartyInfo] = useState(null)
+  
+  // Form states
   const [name, setName] = useState('')
   const [beerType, setBeerType] = useState('')
   const [method, setMethod] = useState('Glas')
@@ -14,12 +16,16 @@ function PartyPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
+  // Stopwatch states
   const [time, setTime] = useState(0)
   const [isManualInput, setIsManualInput] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const startTimeRef = useRef(null)
   const intervalRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Beregn unikke deltagere fra listen af forsøg
+  const uniqueParticipants = [...new Set(attempts.map(a => a.name))].sort()
 
   const fetchData = async () => {
     try {
@@ -110,6 +116,16 @@ function PartyPage() {
     }
   }
 
+  // Når man vælger en eksisterende deltager
+  const selectParticipant = (selectedName) => {
+    setName(selectedName)
+    const lastAttempt = attempts.find(a => a.name === selectedName)
+    if (lastAttempt) {
+      setBeerType(lastAttempt.beer_type || '')
+      setMethod(lastAttempt.method || 'Glas')
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name || time <= 0) {
@@ -162,16 +178,12 @@ function PartyPage() {
 
   const PodiumItem = ({ attempt, place }) => {
     if (!attempt) return <div className="w-1/3"></div>
-    
-    // Mere kompakte højder
     let heightClass = 'h-16'
     if (place === 1) heightClass = 'h-32'
     if (place === 2) heightClass = 'h-24'
-    
     let colorClass = place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.2)]' : place === 2 ? 'bg-gradient-to-t from-slate-500 to-slate-300' : 'bg-gradient-to-t from-orange-800 to-orange-600'
     let icon = place === 1 ? '👑' : place === 2 ? '🥈' : '🥉'
     let orderClass = place === 1 ? 'order-2' : place === 2 ? 'order-1' : 'order-3'
-    // Mindre avatarer
     let imgSize = place === 1 ? 'w-12 h-12 border-2 border-yellow-200' : place === 2 ? 'w-10 h-10 border-2 border-slate-200' : 'w-9 h-9 border-2 border-orange-200'
 
     return (
@@ -193,13 +205,10 @@ function PartyPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 font-sans pb-32">
       <div className="max-w-md mx-auto">
-        
-        {/* TOP BAR - Mere kompakt */}
         <div className="flex items-center gap-3 mb-8 mt-2">
           <Link to="/fester" className="w-10 h-10 flex items-center justify-center bg-slate-800/50 rounded-xl text-slate-400 hover:text-white transition border border-slate-700 hover:bg-slate-800 shadow-sm">
             <span className="text-lg">←</span>
           </Link>
-          
           <div className="flex-1 text-center min-w-0">
             {partyInfo && (
               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-yellow-500/50 block mb-1">
@@ -207,19 +216,14 @@ function PartyPage() {
               </span>
             )}
             <h1 className="text-2xl font-black text-white uppercase tracking-tight truncate">
-              {partyInfo ? partyInfo.name : 'Logbog'}
+              {partyInfo ? partyInfo.name : 'Indlæser...'}
             </h1>
           </div>
-
-          <button 
-            onClick={() => setShowForm(true)}
-            className="w-10 h-10 flex items-center justify-center bg-yellow-500 rounded-xl text-slate-900 shadow-md transform active:scale-95 transition-all duration-200 border-b-2 border-yellow-700"
-          >
+          <button onClick={() => setShowForm(true)} className="w-10 h-10 flex items-center justify-center bg-yellow-500 rounded-xl text-slate-900 shadow-md transform active:scale-95 transition-all duration-200 border-b-2 border-yellow-700">
             <span className="text-2xl font-bold">+</span>
           </button>
         </div>
 
-        {/* PODIUM */}
         {attempts.length > 0 ? (
           <div className="relative mb-8 px-2">
             <div className="flex items-end justify-center gap-2">
@@ -232,40 +236,62 @@ function PartyPage() {
         ) : (
           <div className="text-center py-12 bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-700 mb-8">
             <p className="text-slate-500 text-sm font-medium mb-3">Ingen har drukket endnu...</p>
-            <button onClick={() => setShowForm(true)} className="bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-lg text-sm font-bold border border-yellow-500/20 hover:bg-yellow-500/20 transition">
-              Start festen nu
-            </button>
+            <button onClick={() => setShowForm(true)} className="bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-lg text-sm font-bold border border-yellow-500/20 hover:bg-yellow-500/20 transition">Start festen nu</button>
           </div>
         )}
 
-        {/* MODAL FORM - Mere kompakt */}
         {showForm && (
           <div className="fixed inset-0 bg-slate-950/90 z-50 overflow-y-auto p-4 flex items-center justify-center animate-fade-in backdrop-blur-sm" onClick={() => setShowForm(false)}>
             <div className="w-full max-w-sm bg-slate-800 p-6 rounded-3xl shadow-2xl border border-slate-700 relative" onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowForm(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-700/50 rounded-full text-slate-400 hover:text-white transition">✕</button>
               <h2 className="text-xl font-bold text-white mb-6 text-center uppercase tracking-tight">Nyt Forsøg</h2>
               <form onSubmit={handleSubmit} className="space-y-5">
+                {uniqueParticipants.length > 0 && (
+                  <div className="overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide">
+                    <div className="flex gap-2">
+                      {uniqueParticipants.map(p => (
+                        <button key={p} type="button" onClick={() => selectParticipant(p)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition border ${name === p ? 'bg-yellow-500 text-slate-900 border-yellow-600 shadow-md' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700 hover:text-white'}`}>{p}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <div>
                     <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Navn</label>
-                    <div className="flex gap-2">
+                    <div className="flex items-stretch gap-2">
                       <div className="relative flex-1">
+                        <style>{`
+                          /* Skjul standard datalist-pil i Chrome/Edge */
+                          input::-webkit-calendar-picker-indicator {
+                            display: none !important;
+                            opacity: 0;
+                          }
+                        `}</style>
                         <input 
                           type="text" 
+                          list="participant-suggestions"
                           value={name} 
-                          onChange={e=>setName(e.target.value)} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            setName(val);
+                            if (uniqueParticipants.includes(val)) selectParticipant(val);
+                          }} 
                           placeholder="Hvem bunder?" 
-                          className="w-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" 
+                          className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" 
                           required 
                           autoFocus 
                         />
+                        <datalist id="participant-suggestions">
+                          {uniqueParticipants.map(p => <option key={p} value={p} />)}
+                        </datalist>
                         {imagePreview && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                            <img src={imagePreview} className="w-8 h-8 rounded-lg object-cover border border-slate-700" />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                            <img src={imagePreview} className="w-8 h-8 rounded-lg object-cover border border-slate-700 shadow-sm" />
                           </div>
                         )}
                       </div>
-                      <label className={`cursor-pointer w-12 h-[50px] flex items-center justify-center rounded-xl border transition shadow-sm ${imagePreview ? 'bg-green-600/20 border-green-500 text-green-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>
+                      <label className={`cursor-pointer w-12 flex items-center justify-center rounded-xl border transition shadow-sm ${imagePreview ? 'bg-green-600/20 border-green-500 text-green-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>
                         <span className="text-xl">📷</span>
                         <input type="file" accept="image/*" capture="user" onChange={handleImageChange} className="hidden" ref={fileInputRef}/>
                       </label>
@@ -314,7 +340,11 @@ function PartyPage() {
             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Alle Resultater</h2>
             {attempts.length>0 && <button onClick={()=>setIsEditMode(!isEditMode)} className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full transition border ${isEditMode?'bg-red-500/20 text-red-400 border-red-500/50':'text-slate-500 border-slate-700 hover:border-slate-500'}`}>{isEditMode?'Færdig':'Rediger'}</button>}
           </div>
-          {attempts.map((a,i)=>(
+          {attempts.map((a,i)=>{
+            const personAttempts = attempts.filter(att => att.name === a.name).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+            const attemptNumber = personAttempts.findIndex(att => att.id === a.id) + 1;
+
+            return (
             <div key={a.id} className={`p-3 rounded-2xl flex items-center justify-between border transition-all duration-300 ${a.time<3?'bg-gradient-to-r from-yellow-900/20 to-slate-800/50 border-yellow-500/30 shadow-sm':'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/60'}`}>
                <div className="flex items-center gap-4">
                  <span className={`text-xl font-black w-6 text-center ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>#{i+1}</span>
@@ -323,7 +353,12 @@ function PartyPage() {
                   <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
                  </div>
                  <div>
-                   <p className="font-bold text-white text-base leading-tight">{a.name}</p>
+                   <p className="font-bold text-white text-base leading-tight flex items-center gap-2">
+                     {a.name}
+                     <span className="text-[8px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-600">
+                       {attemptNumber}. forsøg
+                     </span>
+                   </p>
                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{a.beer_type} • {formatClock(a.created_at)}</p>
                  </div>
                </div>
@@ -332,7 +367,7 @@ function PartyPage() {
                  {isEditMode && <button onClick={()=>handleDelete(a.id)} className="text-red-400 bg-red-900/30 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-500 hover:text-white transition shadow-sm font-bold text-sm">✕</button>}
                </div>
             </div>
-          ))}
+          )})}
         </div>
       </div>
     </div>
