@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import Skeleton from './Skeleton'
 
 function HallOfFame() {
   const [attempts, setAttempts] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const fetchTop10 = async () => {
     try {
@@ -9,6 +11,7 @@ function HallOfFame() {
       const data = await res.json()
       if (data.data) setAttempts(data.data)
     } catch (err) { console.error(err) }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { fetchTop10() }, [])
@@ -23,45 +26,50 @@ function HallOfFame() {
           <h1 className="text-4xl font-black text-white uppercase tracking-tight">Hall of Fame</h1>
         </header>
 
-        {/* LISTE */}
-        <div className="space-y-3">
-          {attempts.map((a, i) => (
-            <div key={a.id} className={`p-4 rounded-2xl flex items-center justify-between border relative overflow-hidden ${i===0 ? 'bg-gradient-to-r from-yellow-900/40 to-slate-800 border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.15)]' : 'bg-slate-800/40 border-slate-700/50'}`}>
-               
-               {/* Rank Badge */}
-               <div className="flex items-center gap-4 z-10">
-                 <div className={`w-8 text-center text-2xl font-black ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>
-                   #{i+1}
-                 </div>
+        {/* LOADING */}
+        {loading ? (
+          <Skeleton />
+        ) : (
+          /* LISTE */
+          <div className="space-y-3">
+            {attempts.map((a, i) => (
+              <div key={a.id} className={`p-4 rounded-2xl flex items-center justify-between border relative overflow-hidden ${i===0 ? 'bg-gradient-to-r from-yellow-900/40 to-slate-800 border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.15)]' : 'bg-slate-800/40 border-slate-700/50'}`}>
                  
-                 {/* Avatar */}
-                 <div className="relative">
-                   {a.image_url ? (
-                     <img src={a.image_url} className="w-12 h-12 rounded-xl object-cover bg-slate-700 border border-slate-600 shadow-md"/>
-                   ) : (
-                     <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 text-xl border border-slate-600">👤</div>
-                   )}
-                   {/* Guld krone på 1. pladsen */}
-                   {i===0 && <span className="absolute -top-3 -right-2 text-xl drop-shadow-md rotate-12">👑</span>}
+                 {/* Rank Badge */}
+                 <div className="flex items-center gap-4 z-10">
+                   <div className={`w-8 text-center text-2xl font-black ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>
+                     #{i+1}
+                   </div>
+                   
+                   {/* Avatar */}
+                   <div className="relative">
+                     {a.image_url ? (
+                       <img src={a.image_url} className="w-12 h-12 rounded-xl object-cover bg-slate-700 border border-slate-600 shadow-md"/>
+                     ) : (
+                       <div className="w-12 h-12 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 text-xl border border-slate-600">👤</div>
+                     )}
+                     {/* Guld krone på 1. pladsen */}
+                     {i===0 && <span className="absolute -top-3 -right-2 text-xl drop-shadow-md rotate-12">👑</span>}
+                   </div>
+
+                   <div>
+                     <p className="font-bold text-white text-lg leading-tight">{a.name}</p>
+                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">{a.partyName || 'Ukendt Fest'}</p>
+                   </div>
                  </div>
 
-                 <div>
-                   <p className="font-bold text-white text-lg leading-tight">{a.name}</p>
-                   <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">{a.partyName || 'Ukendt Fest'}</p>
+                 {/* Tid */}
+                 <div className="text-right z-10">
+                   <span className={`font-mono font-black text-3xl ${a.time<3?'text-green-400':'text-slate-200'}`}>{a.time.toFixed(2)}s</span>
                  </div>
-               </div>
+              </div>
+            ))}
 
-               {/* Tid */}
-               <div className="text-right z-10">
-                 <span className={`font-mono font-black text-3xl ${a.time<3?'text-green-400':'text-slate-200'}`}>{a.time.toFixed(2)}s</span>
-               </div>
-            </div>
-          ))}
-
-          {attempts.length === 0 && (
-            <div className="text-center py-20 text-slate-600 text-sm font-medium">Ingen rekorder endnu. Bliver du den første? 🏆</div>
-          )}
-        </div>
+            {attempts.length === 0 && (
+              <div className="text-center py-20 text-slate-600 text-sm font-medium">Ingen rekorder endnu. Bliver du den første? 🏆</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

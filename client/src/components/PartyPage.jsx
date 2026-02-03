@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import Skeleton from './Skeleton'
 
 function PartyPage() {
   const { id: partyId } = useParams()
@@ -12,7 +13,7 @@ function PartyPage() {
   const [method, setMethod] = useState('Glas')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
@@ -28,6 +29,7 @@ function PartyPage() {
   const uniqueParticipants = [...new Set(attempts.map(a => a.name))].sort()
 
   const fetchData = async () => {
+    if (!partyInfo) setLoading(true)
     try {
       const [attemptsRes, partyRes] = await Promise.all([
         fetch(`/api/attempts?partyId=${partyId}`),
@@ -39,6 +41,8 @@ function PartyPage() {
       setPartyInfo(partyData.data)
     } catch (error) {
       console.error('Error fetching data:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -116,7 +120,6 @@ function PartyPage() {
     }
   }
 
-  // Når man vælger en eksisterende deltager
   const selectParticipant = (selectedName) => {
     setName(selectedName)
     const lastAttempt = attempts.find(a => a.name === selectedName)
@@ -178,9 +181,7 @@ function PartyPage() {
 
   const PodiumItem = ({ attempt, place }) => {
     if (!attempt) return <div className="w-1/3"></div>
-    let heightClass = 'h-16'
-    if (place === 1) heightClass = 'h-32'
-    if (place === 2) heightClass = 'h-24'
+    let heightClass = place === 1 ? 'h-32' : place === 2 ? 'h-24' : 'h-16'
     let colorClass = place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.2)]' : place === 2 ? 'bg-gradient-to-t from-slate-500 to-slate-300' : 'bg-gradient-to-t from-orange-800 to-orange-600'
     let icon = place === 1 ? '👑' : place === 2 ? '🥈' : '🥉'
     let orderClass = place === 1 ? 'order-2' : place === 2 ? 'order-1' : 'order-3'
@@ -205,6 +206,7 @@ function PartyPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 font-sans pb-32">
       <div className="max-w-md mx-auto">
+        
         <div className="flex items-center gap-3 mb-8 mt-2">
           <Link to="/fester" className="w-10 h-10 flex items-center justify-center bg-slate-800/50 rounded-xl text-slate-400 hover:text-white transition border border-slate-700 hover:bg-slate-800 shadow-sm">
             <span className="text-lg">←</span>
@@ -224,151 +226,169 @@ function PartyPage() {
           </button>
         </div>
 
-        {attempts.length > 0 ? (
-          <div className="relative mb-8 px-2">
-            <div className="flex items-end justify-center gap-2">
-              <PodiumItem attempt={attempts[1]} place={2} />
-              <PodiumItem attempt={attempts[0]} place={1} />
-              <PodiumItem attempt={attempts[2]} place={3} />
-            </div>
-            <div className="h-0.5 w-full bg-slate-800 rounded-full mt-0 shadow-inner opacity-50"></div>
-          </div>
+        {loading ? (
+          <>
+            <Skeleton type="podium" />
+            <Skeleton type="list" />
+          </>
         ) : (
-          <div className="text-center py-12 bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-700 mb-8">
-            <p className="text-slate-500 text-sm font-medium mb-3">Ingen har drukket endnu...</p>
-            <button onClick={() => setShowForm(true)} className="bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-lg text-sm font-bold border border-yellow-500/20 hover:bg-yellow-500/20 transition">Start festen nu</button>
-          </div>
-        )}
-
-        {showForm && (
-          <div className="fixed inset-0 bg-slate-950/90 z-50 overflow-y-auto p-4 flex items-center justify-center animate-fade-in backdrop-blur-sm" onClick={() => setShowForm(false)}>
-            <div className="w-full max-w-sm bg-slate-800 p-6 rounded-3xl shadow-2xl border border-slate-700 relative" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setShowForm(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-700/50 rounded-full text-slate-400 hover:text-white transition">✕</button>
-              <h2 className="text-xl font-bold text-white mb-6 text-center uppercase tracking-tight">Nyt Forsøg</h2>
-              <form onSubmit={handleSubmit} className="space-y-5">
-                {uniqueParticipants.length > 0 && (
-                  <div className="overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide">
-                    <div className="flex gap-2">
-                      {uniqueParticipants.map(p => (
-                        <button key={p} type="button" onClick={() => selectParticipant(p)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition border ${name === p ? 'bg-yellow-500 text-slate-900 border-yellow-600 shadow-md' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700 hover:text-white'}`}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Navn</label>
-                    <div className="flex items-stretch gap-2">
-                      <div className="relative flex-1">
-                        <style>{`
-                          /* Skjul standard datalist-pil i Chrome/Edge */
-                          input::-webkit-calendar-picker-indicator {
-                            display: none !important;
-                            opacity: 0;
-                          }
-                        `}</style>
-                        <input 
-                          type="text" 
-                          list="participant-suggestions"
-                          value={name} 
-                          onChange={e => {
-                            const val = e.target.value;
-                            setName(val);
-                            if (uniqueParticipants.includes(val)) selectParticipant(val);
-                          }} 
-                          placeholder="Hvem bunder?" 
-                          className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" 
-                          required 
-                          autoFocus 
-                        />
-                        <datalist id="participant-suggestions">
-                          {uniqueParticipants.map(p => <option key={p} value={p} />)}
-                        </datalist>
-                        {imagePreview && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-                            <img src={imagePreview} className="w-8 h-8 rounded-lg object-cover border border-slate-700 shadow-sm" />
-                          </div>
-                        )}
-                      </div>
-                      <label className={`cursor-pointer w-12 flex items-center justify-center rounded-xl border transition shadow-sm ${imagePreview ? 'bg-green-600/20 border-green-500 text-green-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>
-                        <span className="text-xl">📷</span>
-                        <input type="file" accept="image/*" capture="user" onChange={handleImageChange} className="hidden" ref={fileInputRef}/>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Øl</label>
-                      <input type="text" value={beerType} onChange={e=>setBeerType(e.target.value)} placeholder="Type" className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-yellow-500 transition font-medium" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Metode</label>
-                      <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700 h-[50px]">
-                        <button type="button" onClick={()=>setMethod('Glas')} className={`flex-1 rounded-lg transition-all duration-200 ${method==='Glas'?'bg-yellow-500 text-slate-900 font-bold shadow':'text-slate-500 hover:text-slate-300'}`}>🍺</button>
-                        <button type="button" onClick={()=>setMethod('Dåse')} className={`flex-1 rounded-lg transition-all duration-200 ${method==='Dåse'?'bg-yellow-500 text-slate-900 font-bold shadow':'text-slate-500 hover:text-slate-300'}`}>🥫</button>
-                      </div>
-                    </div>
-                  </div>
+          <>
+            {attempts.length > 0 ? (
+              <div className="relative mb-8 px-2">
+                <div className="flex items-end justify-center gap-2">
+                  <PodiumItem attempt={attempts[1]} place={2} />
+                  <PodiumItem attempt={attempts[0]} place={1} />
+                  <PodiumItem attempt={attempts[2]} place={3} />
                 </div>
+                <div className="h-0.5 w-full bg-slate-800 rounded-full mt-0 shadow-inner opacity-50"></div>
+              </div>
+            ) : (
+              <div className="text-center py-12 bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-700 mb-8">
+                <p className="text-slate-500 text-sm font-medium mb-3">Ingen har drukket endnu...</p>
+                <button onClick={() => setShowForm(true)} className="bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-lg text-sm font-bold border border-yellow-500/20 hover:bg-yellow-500/20 transition">Start festen nu</button>
+              </div>
+            )}
 
-                <div className="py-2">
-                  <div className="flex justify-between items-center mb-2"><label className="text-[10px] uppercase font-bold text-slate-500 ml-2 tracking-wider">Tidtagning</label><button type="button" onClick={()=>{setIsManualInput(!isManualInput);setIsRunning(false)}} className="text-[10px] uppercase font-bold text-yellow-500 hover:text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-md border border-yellow-500/20">{isManualInput ? 'Stopur' : 'Indtast'}</button></div>
-                  {isManualInput ? (
-                    <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 shadow-inner">
-                      <input type="number" step="0.01" value={time===0?'':time} onChange={e=>setTime(e.target.value)} className="w-full text-center text-4xl font-mono font-black bg-transparent text-white outline-none" placeholder="0.00" />
-                    </div>
-                  ) : (
-                    <div className="bg-slate-900 p-5 rounded-3xl flex flex-col items-center gap-4 border border-slate-700 shadow-inner">
-                        <div className={`text-6xl font-mono font-black tabular-nums tracking-tighter ${isRunning?'text-yellow-400 animate-pulse':time>0&&time<3?'text-green-400':'text-white'}`}>{formatTime(parseFloat(time))}</div>
-                        <div className="flex gap-3 w-full">
-                          <button type="button" onClick={handleStartStop} className={`flex-1 py-4 rounded-xl font-black text-xl shadow-lg transition transform active:scale-95 border-b-4 ${isRunning?'bg-red-500 text-white border-red-700':'bg-green-500 text-slate-900 border-green-700'}`}>{isRunning?'STOP!':'START'}</button>
-                          {!isRunning && time>0 && <button type="button" onClick={handleReset} className="px-6 bg-slate-700 rounded-xl text-white shadow-md active:bg-slate-600 transition border-b-2 border-slate-800">↺</button>}
+            {showForm && (
+              <div className="fixed inset-0 bg-slate-950/90 z-50 overflow-y-auto p-4 flex items-center justify-center animate-fade-in backdrop-blur-sm" onClick={() => setShowForm(false)}>
+                <div className="w-full max-w-sm bg-slate-800 p-6 rounded-3xl shadow-2xl border border-slate-700 relative" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setShowForm(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-700/50 rounded-full text-slate-400 hover:text-white transition">✕</button>
+                  <h2 className="text-xl font-bold text-white mb-6 text-center uppercase tracking-tight">Nyt Forsøg</h2>
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    
+                    {uniqueParticipants.length > 0 && (
+                      <div className="overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide">
+                        <div className="flex gap-2">
+                          {uniqueParticipants.map(p => (
+                            <button 
+                              key={p} 
+                              type="button" 
+                              onClick={() => selectParticipant(p)}
+                              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition border ${name === p ? 'bg-yellow-500 text-slate-900 border-yellow-600 shadow-md' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700 hover:text-white'}`}
+                            >
+                              {p}
+                            </button>
+                          ))}
                         </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Navn</label>
+                        <div className="flex items-stretch gap-2">
+                          <div className="relative flex-1">
+                            <input 
+                              type="text" 
+                              list="participant-suggestions"
+                              value={name} 
+                              onChange={e => {
+                                const val = e.target.value;
+                                setName(val);
+                                if (uniqueParticipants.includes(val)) {
+                                  selectParticipant(val);
+                                }
+                              }} 
+                              placeholder="Hvem bunder?" 
+                              className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" 
+                              required 
+                              autoFocus 
+                            />
+                            <datalist id="participant-suggestions">
+                              {uniqueParticipants.map(p => <option key={p} value={p} />)}
+                            </datalist>
+                            <style>{`
+                              input::-webkit-calendar-picker-indicator {
+                                display: none !important;
+                                opacity: 0;
+                              }
+                            `}</style>
+                            {imagePreview && (
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                                <img src={imagePreview} className="w-8 h-8 rounded-lg object-cover border border-slate-700 shadow-sm" />
+                              </div>
+                            )}
+                          </div>
+                          <label className={`cursor-pointer w-12 flex items-center justify-center rounded-xl border transition shadow-sm ${imagePreview ? 'bg-green-600/20 border-green-500 text-green-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>
+                            <span className="text-xl">📷</span>
+                            <input type="file" accept="image/*" capture="user" onChange={handleImageChange} className="hidden" ref={fileInputRef}/>
+                          </label>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Øl</label>
+                          <input type="text" value={beerType} onChange={e=>setBeerType(e.target.value)} placeholder="Type" className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-yellow-500 transition font-medium" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 ml-2 mb-1 block tracking-wider">Metode</label>
+                          <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700 h-[50px]">
+                            <button type="button" onClick={()=>setMethod('Glas')} className={`flex-1 rounded-lg transition-all duration-200 ${method==='Glas'?'bg-yellow-500 text-slate-900 font-bold shadow':'text-slate-500 hover:text-slate-300'}`}>🍺</button>
+                            <button type="button" onClick={()=>setMethod('Dåse')} className={`flex-1 rounded-lg transition-all duration-200 ${method==='Dåse'?'bg-yellow-500 text-slate-900 font-bold shadow':'text-slate-500 hover:text-slate-300'}`}>🥫</button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    <div className="py-2">
+                      <div className="flex justify-between items-center mb-2"><label className="text-[10px] uppercase font-bold text-slate-500 ml-2 tracking-wider">Tidtagning</label><button type="button" onClick={()=>{setIsManualInput(!isManualInput);setIsRunning(false)}} className="text-[10px] uppercase font-bold text-yellow-500 hover:text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-md border border-yellow-500/20">{isManualInput ? 'Stopur' : 'Indtast'}</button></div>
+                      {isManualInput ? (
+                        <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 shadow-inner">
+                          <input type="number" step="0.01" value={time===0?'':time} onChange={e=>setTime(e.target.value)} className="w-full text-center text-4xl font-mono font-black bg-transparent text-white outline-none" placeholder="0.00" />
+                        </div>
+                      ) : (
+                        <div className="bg-slate-900 p-5 rounded-3xl flex flex-col items-center gap-4 border border-slate-700 shadow-inner">
+                            <div className={`text-6xl font-mono font-black tabular-nums tracking-tighter ${isRunning?'text-yellow-400 animate-pulse':time>0&&time<3?'text-green-400':'text-white'}`}>{formatTime(parseFloat(time))}</div>
+                            <div className="flex gap-3 w-full">
+                              <button type="button" onClick={handleStartStop} className={`flex-1 py-4 rounded-xl font-black text-xl shadow-lg transition transform active:scale-95 border-b-4 ${isRunning?'bg-red-500 text-white border-red-700':'bg-green-500 text-slate-900 border-green-700'}`}>{isRunning?'STOP!':'START'}</button>
+                              {!isRunning && time>0 && <button type="button" onClick={handleReset} className="px-6 bg-slate-700 rounded-xl text-white shadow-md active:bg-slate-600 transition border-b-2 border-slate-800">↺</button>}
+                            </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button type="submit" disabled={loading||isRunning||time<=0} className="w-full bg-yellow-500 py-4 rounded-xl font-black text-slate-900 text-lg uppercase tracking-widest shadow-md transform active:scale-95 transition-all disabled:opacity-20 border-b-4 border-yellow-600">Gem Rekord</button>
+                  </form>
                 </div>
+              </div>
+            )}
 
-                <button type="submit" disabled={loading||isRunning||time<=0} className="w-full bg-yellow-500 py-4 rounded-xl font-black text-slate-900 text-lg uppercase tracking-widest shadow-md transform active:scale-95 transition-all disabled:opacity-20 border-b-4 border-yellow-600">Gem Rekord</button>
-              </form>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center px-1 mb-1">
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Alle Resultater</h2>
+                {attempts.length>0 && <button onClick={()=>setIsEditMode(!isEditMode)} className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full transition border ${isEditMode?'bg-red-500/20 text-red-400 border-red-500/50':'text-slate-500 border-slate-700 hover:border-slate-500'}`}>{isEditMode?'Færdig':'Rediger'}</button>}
+              </div>
+              {attempts.map((a,i)=>{
+                const personAttempts = attempts.filter(att => att.name === a.name).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+                const attemptNumber = personAttempts.findIndex(att => att.id === a.id) + 1;
+
+                return (
+                <div key={a.id} className={`p-3 rounded-2xl flex items-center justify-between border transition-all duration-300 ${a.time<3?'bg-gradient-to-r from-yellow-900/20 to-slate-800/50 border-yellow-500/30 shadow-sm':'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/60'}`}>
+                   <div className="flex items-center gap-4">
+                     <span className={`text-xl font-black w-6 text-center ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>#{i+1}</span>
+                     <div className="relative">
+                      {a.image_url ? <img src={a.image_url} className="w-10 h-10 rounded-xl object-cover bg-slate-700 border border-slate-600 shadow-sm"/> : <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 text-lg border border-slate-600">👤</div>}
+                      <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
+                     </div>
+                     <div>
+                       <p className="font-bold text-white text-base leading-tight flex items-center gap-2">
+                         {a.name}
+                         <span className="text-[8px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-600">
+                           {attemptNumber}. forsøg
+                         </span>
+                       </p>
+                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{a.beer_type} • {formatClock(a.created_at)}</p>
+                     </div>
+                   </div>
+                   <div className="text-right flex items-center gap-3">
+                     <span className={`font-mono font-black text-xl ${a.time<3?'text-green-400':'text-slate-200'}`}>{a.time.toFixed(2)}s</span>
+                     {isEditMode && <button onClick={()=>handleDelete(a.id)} className="text-red-400 bg-red-900/30 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-500 hover:text-white transition shadow-sm font-bold text-sm">✕</button>}
+                   </div>
+                </div>
+              )})}
             </div>
-          </div>
+          </>
         )}
-
-        <div className="space-y-3">
-          <div className="flex justify-between items-center px-1 mb-1">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Alle Resultater</h2>
-            {attempts.length>0 && <button onClick={()=>setIsEditMode(!isEditMode)} className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full transition border ${isEditMode?'bg-red-500/20 text-red-400 border-red-500/50':'text-slate-500 border-slate-700 hover:border-slate-500'}`}>{isEditMode?'Færdig':'Rediger'}</button>}
-          </div>
-          {attempts.map((a,i)=>{
-            const personAttempts = attempts.filter(att => att.name === a.name).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
-            const attemptNumber = personAttempts.findIndex(att => att.id === a.id) + 1;
-
-            return (
-            <div key={a.id} className={`p-3 rounded-2xl flex items-center justify-between border transition-all duration-300 ${a.time<3?'bg-gradient-to-r from-yellow-900/20 to-slate-800/50 border-yellow-500/30 shadow-sm':'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/60'}`}>
-               <div className="flex items-center gap-4">
-                 <span className={`text-xl font-black w-6 text-center ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>#{i+1}</span>
-                 <div className="relative">
-                  {a.image_url ? <img src={a.image_url} className="w-10 h-10 rounded-xl object-cover bg-slate-700 border border-slate-600 shadow-sm"/> : <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 text-lg border border-slate-600">👤</div>}
-                  <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
-                 </div>
-                 <div>
-                   <p className="font-bold text-white text-base leading-tight flex items-center gap-2">
-                     {a.name}
-                     <span className="text-[8px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-600">
-                       {attemptNumber}. forsøg
-                     </span>
-                   </p>
-                   <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{a.beer_type} • {formatClock(a.created_at)}</p>
-                 </div>
-               </div>
-               <div className="text-right flex items-center gap-3">
-                 <span className={`font-mono font-black text-xl ${a.time<3?'text-green-400':'text-slate-200'}`}>{a.time.toFixed(2)}s</span>
-                 {isEditMode && <button onClick={()=>handleDelete(a.id)} className="text-red-400 bg-red-900/30 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-500 hover:text-white transition shadow-sm font-bold text-sm">✕</button>}
-               </div>
-            </div>
-          )})}
-        </div>
       </div>
     </div>
   )
