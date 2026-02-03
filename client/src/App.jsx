@@ -75,8 +75,6 @@ function App() {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 800;
           const scaleSize = MAX_WIDTH / img.width;
-          
-          // Hvis billedet er mindre end max bredde, brug original størrelse
           const width = (scaleSize < 1) ? MAX_WIDTH : img.width;
           const height = (scaleSize < 1) ? img.height * scaleSize : img.height;
 
@@ -86,7 +84,6 @@ function App() {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Komprimer til JPEG med 80% kvalitet
           canvas.toBlob((blob) => {
             const compressedFile = new File([blob], file.name, {
               type: 'image/jpeg',
@@ -102,18 +99,15 @@ function App() {
   const handleImageChange = async (e) => {
     const file = e.target.files[0]
     if (file) {
-      // Vis preview med det samme (af originalen)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result)
       }
       reader.readAsDataURL(file)
 
-      // Komprimer billedet i baggrunden
       try {
         const compressed = await compressImage(file);
         setImageFile(compressed);
-        console.log(`Billede komprimeret: ${(file.size / 1024).toFixed(0)}KB -> ${(compressed.size / 1024).toFixed(0)}KB`);
       } catch (err) {
         console.error("Fejl ved komprimering, bruger original:", err);
         setImageFile(file);
@@ -149,7 +143,6 @@ function App() {
         throw new Error(errorData.error || `Server fejl: ${response.status}`);
       }
       
-      // Reset
       setName('')
       setBeerType('')
       setMethod('Glas') 
@@ -162,7 +155,7 @@ function App() {
       fetchAttempts()
     } catch (error) {
       console.error('Error submitting attempt:', error)
-      alert(`Fejl ved indsendelse: ${error.message}. Prøv igen uden billede hvis det bliver ved.`);
+      alert(`Fejl ved indsendelse: ${error.message}`);
     } finally {
       setLoading(false)
     }
@@ -183,7 +176,20 @@ function App() {
 
   const formatTime = (t) => t.toFixed(2)
 
-  // Helper til Podie-kort
+  // NY HJÆLPER: Formatér klokkeslæt sikkert
+  const formatClock = (dateString) => {
+    if (!dateString) return '??:??';
+    try {
+      const date = new Date(dateString);
+      // Tjek om datoen er gyldig
+      if (isNaN(date.getTime())) return '??:??';
+      
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '??:??';
+    }
+  }
+
   const PodiumItem = ({ attempt, place }) => {
     if (!attempt) return <div className="w-1/3"></div>
 
@@ -250,7 +256,6 @@ function App() {
           <p className="text-slate-400">Den ultimative øl-bunde logbog</p>
         </header>
 
-        {/* PODIUM */}
         {attempts.length > 0 && (
           <div className="mb-10 mt-6 flex items-end justify-center gap-2 sm:gap-4 px-2">
             <PodiumItem attempt={attempts[1]} place={2} />
@@ -276,7 +281,6 @@ function App() {
                       className="w-full pl-4 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none text-white placeholder-slate-600"
                       required
                     />
-                    {/* Billed Preview i input feltet */}
                     {imagePreview && (
                       <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
                         <img src={imagePreview} alt="Preview" className="w-8 h-8 rounded-full object-cover border border-slate-500" />
@@ -284,7 +288,6 @@ function App() {
                     )}
                   </div>
                   
-                  {/* Kamera Knap */}
                   <div className="relative">
                     <input 
                       type="file" 
@@ -339,7 +342,6 @@ function App() {
               </div>
             </div>
 
-            {/* TID OMRÅDE */}
             <div className="py-2">
               <div className="flex justify-between items-center mb-2">
                 <label className="text-sm font-medium text-slate-400">Tid</label>
@@ -356,7 +358,6 @@ function App() {
               </div>
               
               {isManualInput ? (
-                // MANUELT INPUT
                 <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-700/50">
                    <div className="relative">
                     <input
@@ -372,7 +373,6 @@ function App() {
                    </div>
                 </div>
               ) : (
-                // STOPUR DISPLAY
                 <div className="flex flex-col items-center gap-4 bg-slate-900/50 p-6 rounded-xl border border-slate-700/50">
                   <div className={`text-6xl font-mono font-black tabular-nums tracking-tighter ${
                       isRunning 
@@ -464,7 +464,6 @@ function App() {
                     <div className="flex items-center gap-4">
                       <span className={`text-2xl font-black w-8 text-center ${rankColor}`}>#{rank}</span>
                       
-                      {/* Avatar i listen */}
                       {attempt.image_url ? (
                         <img src={attempt.image_url} alt="User" className="w-10 h-10 rounded-full object-cover bg-slate-700 border border-slate-600" />
                       ) : (
@@ -484,7 +483,7 @@ function App() {
                         <p className="text-xs text-slate-500 flex gap-2 mt-1">
                           <span>{attempt.beer_type || 'Ukendt øl'}</span>
                           <span>•</span>
-                          <span>kl. {new Date(attempt.created_at.replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>kl. {formatClock(attempt.created_at)}</span>
                         </p>
                       </div>
                     </div>
