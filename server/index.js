@@ -1,120 +1,165 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const path = require('path');
 const multer = require('multer');
-const fs = require('fs');
+const admin = require('firebase-admin');
+const path = require('path');
+
+// --- FIREBASE SETUP ---
+let serviceAccount;
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8'));
+  } catch (e) {
+    console.error('CRITICAL ERROR: Failed to parse FIREBASE_SERVICE_ACCOUNT base64 string.', e);
+  }
+} else {
+  try {
+    serviceAccount = require('./serviceAccountKey.json');
+  } catch (e) {
+    console.log('Running locally without ENV variable (looking for serviceAccountKey.json).');
+  }
+}
+
+let bucket;
+const db = admin.firestore ? admin.firestore() : null; // Initier kun hvis admin virker
+let attemptsCollection;
+
+if (serviceAccount) {
+  try {
+    const bucketName = process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`;
+    console.log(`Initializing Firebase with bucket: ${bucketName}`);
+    
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      storageBucket: bucketName
+    });
+    
+    // Refresh referencer efter init
+    attemptsCollection = admin.firestore().collection('attempts');
+    bucket = admin.storage().bucket();
+    console.log('Firebase Admin Initialized successfully.');
+  } catch (error) {
+    console.error('Firebase Init Error:', error);
+  }
+} else {
+  console.error("FATAL: No service account credentials found. Database will not work.");
+}
 
 const app = express();
 const port = 3000;
 
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/')
-  },
-  filename: function (req, file, cb) {
-    // Unikt filnavn: timestamp + original extension
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // Max 5MB
 });
-const upload = multer({ storage: storage });
 
 app.use(cors());
 app.use(bodyParser.json());
-// Gør uploads mappen tilgængelig som statiske filer
-app.use('/uploads', express.static('uploads'));
 
-// Database setup
-const dbPath = path.resolve(__dirname, 'sub3.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Could not connect to database', err);
-  } else {
-    console.log('Connected to SQLite database');
+// --- ROUTES ---
+
+app.get('/api/attempts', async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database not connected"});
+  
+  try {
+    const snapshot = await attemptsCollection.orderBy('time', 'asc').get();
+    
+    const attempts = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
+      };
+    });
+
+    res.json({ "message": "success", "data": attempts });
+  } catch (err) {
+    console.error("GET Error:", err);
+    res.status(500).json({"error": err.message});
   }
 });
 
-// Create table & Migration
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS attempts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    time REAL NOT NULL,
-    beer_type TEXT DEFAULT 'Ukendt',
-    method TEXT DEFAULT 'Glas',
-    image_path TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`, (err) => {
-    if (!err) {
-      // Migrations for existing tables
-      db.run("ALTER TABLE attempts ADD COLUMN beer_type TEXT DEFAULT 'Ukendt'", () => {});
-      db.run("ALTER TABLE attempts ADD COLUMN method TEXT DEFAULT 'Glas'", () => {});
-      db.run("ALTER TABLE attempts ADD COLUMN image_path TEXT", () => {});
-    }
-  });
-});
+app.post('/api/attempts', upload.single('image'), async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database not connected"});
 
-// Routes
-app.get('/api/attempts', (req, res) => {
-  db.all("SELECT * FROM attempts ORDER BY time ASC", [], (err, rows) => {
-    if (err) {
-      res.status(400).json({"error": err.message});
-      return;
+  try {
+    const { name, time, beer_type, method } = req.body;
+    let image_url = null;
+
+    if (!name || !time) {
+      return res.status(400).json({"error": "Please provide name and time"});
     }
-    // Tilføj fuld URL til billedet hvis det findes
-    const attemptsWithImages = rows.map(row => {
-      if (row.image_path) {
-        return { ...row, image_url: `http://localhost:${port}/${row.image_path}` };
+
+    console.log(`Processing attempt for: ${name}, Time: ${time}`);
+
+    // Prøv at uploade billede - men lad ikke hele requesten fejle hvis det går galt
+    if (req.file && bucket) {
+      try {
+        console.log(`Uploading image (${req.file.size} bytes)...`);
+        const filename = `attempts/${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+        const file = bucket.file(filename);
+
+        await file.save(req.file.buffer, {
+          metadata: { contentType: req.file.mimetype },
+          resumable: false 
+        });
+
+        // Gør filen offentlig
+        await file.makePublic();
+        image_url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+        console.log(`Image uploaded to: ${image_url}`);
+      } catch (imgError) {
+        console.error("Image upload failed (continuing without image):", imgError);
+        // Vi fortsætter uden image_url
       }
-      return row;
-    });
+    } else if (req.file && !bucket) {
+      console.warn("Image received but Storage Bucket not initialized.");
+    }
+    
+    const newAttempt = {
+      name,
+      time: parseFloat(time),
+      beer_type: beer_type || 'Ukendt',
+      method: method || 'Glas',
+      image_url: image_url,
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    const docRef = await attemptsCollection.add(newAttempt);
+    console.log(`Attempt saved with ID: ${docRef.id}`);
     
     res.json({
       "message": "success",
-      "data": attemptsWithImages
+      "data": { 
+        id: docRef.id, 
+        ...newAttempt,
+        created_at: new Date().toISOString() 
+      }
     });
-  });
-});
-
-// Opdateret POST route der håndterer både tekst og fil
-app.post('/api/attempts', upload.single('image'), (req, res) => {
-  const { name, time, beer_type, method } = req.body;
-  const image_path = req.file ? req.file.path : null;
-
-  if (!name || !time) {
-    res.status(400).json({"error": "Please provide name and time"});
-    return;
+  } catch (err) {
+    console.error("POST Error:", err);
+    res.status(500).json({"error": err.message});
   }
-  
-  const sql = 'INSERT INTO attempts (name, time, beer_type, method, image_path) VALUES (?, ?, ?, ?, ?)';
-  const params = [name, time, beer_type || 'Ukendt', method || 'Glas', image_path];
-  
-  db.run(sql, params, function (err, result) {
-    if (err) {
-      res.status(400).json({"error": err.message});
-      return;
-    }
-    res.json({
-      "message": "success",
-      "data": { id: this.lastID, name, time, beer_type, method, image_path }
-    });
-  });
 });
 
-app.delete('/api/attempts/:id', (req, res) => {
-  const id = req.params.id;
-  db.run("DELETE FROM attempts WHERE id = ?", id, function (err) {
-    if (err) {
-      res.status(400).json({"error": err.message});
-      return;
-    }
-    res.json({"message": "deleted", changes: this.changes});
-  });
+app.delete('/api/attempts/:id', async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database not connected"});
+  try {
+    const id = req.params.id;
+    await attemptsCollection.doc(id).delete();
+    res.json({"message": "deleted"});
+  } catch (err) {
+    res.status(500).json({"error": err.message});
+  }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
+}
+
+module.exports = app;

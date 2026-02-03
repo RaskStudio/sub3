@@ -63,16 +63,61 @@ function App() {
     setTime(0)
   }
 
-  const handleImageChange = (e) => {
+  // --- IMAGE COMPRESSION HELPER ---
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const scaleSize = MAX_WIDTH / img.width;
+          
+          // Hvis billedet er mindre end max bredde, brug original størrelse
+          const width = (scaleSize < 1) ? MAX_WIDTH : img.width;
+          const height = (scaleSize < 1) ? img.height * scaleSize : img.height;
+
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Komprimer til JPEG med 80% kvalitet
+          canvas.toBlob((blob) => {
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          }, 'image/jpeg', 0.8);
+        };
+      };
+    });
+  };
+
+  const handleImageChange = async (e) => {
     const file = e.target.files[0]
     if (file) {
-      setImageFile(file)
-      // Lav preview URL
+      // Vis preview med det samme (af originalen)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result)
       }
       reader.readAsDataURL(file)
+
+      // Komprimer billedet i baggrunden
+      try {
+        const compressed = await compressImage(file);
+        setImageFile(compressed);
+        console.log(`Billede komprimeret: ${(file.size / 1024).toFixed(0)}KB -> ${(compressed.size / 1024).toFixed(0)}KB`);
+      } catch (err) {
+        console.error("Fejl ved komprimering, bruger original:", err);
+        setImageFile(file);
+      }
     }
   }
 
@@ -84,7 +129,6 @@ function App() {
     }
     setLoading(true)
 
-    // Brug FormData til at sende billede + data
     const formData = new FormData()
     formData.append('name', name)
     formData.append('time', time)
@@ -95,10 +139,15 @@ function App() {
     }
 
     try {
-      await fetch('/api/attempts', {
+      const response = await fetch('/api/attempts', {
         method: 'POST',
-        body: formData, // Send formData direkte (ingen Content-Type header, browseren sætter den selv)
+        body: formData,
       })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server fejl: ${response.status}`);
+      }
       
       // Reset
       setName('')
@@ -113,6 +162,7 @@ function App() {
       fetchAttempts()
     } catch (error) {
       console.error('Error submitting attempt:', error)
+      alert(`Fejl ved indsendelse: ${error.message}. Prøv igen uden billede hvis det bliver ved.`);
     } finally {
       setLoading(false)
     }
@@ -239,7 +289,7 @@ function App() {
                     <input 
                       type="file" 
                       accept="image/*" 
-                      capture="user" // Tvinger kamera på mobil hvis muligt
+                      capture="user" 
                       onChange={handleImageChange}
                       ref={fileInputRef}
                       className="hidden" 
