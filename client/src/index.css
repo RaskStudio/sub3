@@ -1,3 +1,24 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Tving mørk baggrund på hele siden for at undgå hvide kanter ved scroll */
+html, body {
+  background-color: #0f172a; /* matches bg-slate-900 */
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+#root {
+  min-h-screen: 100%;
+}
+
+/* Skjul scrollbar for pænere look på chips */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

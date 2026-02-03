@@ -249,7 +249,7 @@ function PartyPage() {
             {/* MODAL FORM - Responsiv men med normal padding */}
             {showForm && (
               <div className="fixed inset-0 bg-slate-950/90 sm:bg-slate-900/80 sm:backdrop-blur-sm z-[60] flex items-center justify-center animate-fade-in" onClick={() => setShowForm(false)}>
-                <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-md bg-slate-900 sm:bg-slate-800 flex flex-col sm:rounded-3xl sm:shadow-2xl sm:border border-slate-700 relative overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="w-full max-w-sm h-[85vh] sm:h-auto sm:max-h-[90vh] bg-slate-900 sm:bg-slate-800 flex flex-col rounded-3xl shadow-2xl border border-slate-700 relative overflow-hidden mx-4" onClick={e => e.stopPropagation()}>
                   <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900 sm:bg-slate-800 shrink-0">
                     <h2 className="text-lg font-black text-white uppercase tracking-tight">Nyt Forsøg</h2>
                     <button onClick={() => setShowForm(false)} className="w-8 h-8 flex items-center justify-center bg-slate-800 sm:bg-slate-700/50 rounded-full text-slate-400 hover:text-white transition">✕</button>
@@ -273,7 +273,7 @@ function PartyPage() {
                           <div className="flex items-stretch gap-2">
                             <div className="relative flex-1">
                               <style>{`input::-webkit-calendar-picker-indicator { display: none !important; opacity: 0; }`}</style>
-                              <input type="text" list="participant-suggestions" value={name} onChange={e => { setName(e.target.value); if (uniqueParticipants.includes(e.target.value)) selectParticipant(e.target.value); }} placeholder="Hvem bunder?" className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" required autoFocus />
+                              <input type="text" list="participant-suggestions" value={name} onChange={e => { setName(e.target.value); if (uniqueParticipants.includes(e.target.value)) selectParticipant(e.target.value); }} placeholder="Hvem bunder?" className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" required />
                               <datalist id="participant-suggestions">
                                 {uniqueParticipants.map(p => <option key={p} value={p} />)}
                               </datalist>
@@ -306,15 +306,21 @@ function PartyPage() {
 
                       <div className="py-2">
                         <div className="flex justify-between items-center mb-2"><label className="text-[10px] uppercase font-bold text-slate-500 ml-2 tracking-wider">Tidtagning</label><button type="button" onClick={()=>{setIsManualInput(!isManualInput);setIsRunning(false)}} className="text-[10px] uppercase font-bold text-yellow-500 hover:text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-md border border-yellow-500/20">{isManualInput ? 'Stopur' : 'Indtast'}</button></div>
-                        {isManualInput ? (
-                          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 shadow-inner">
-                            <input type="number" step="0.01" value={time===0?'':time} onChange={e=>setTime(e.target.value)} className="w-full text-center text-4xl font-mono font-black bg-transparent text-white outline-none" placeholder="0.00" />
-                          </div>
-                        ) : (
-                          <div className="bg-slate-900 p-5 rounded-3xl flex flex-col items-center gap-4 border border-slate-700 shadow-inner">
-                              <div className={`text-6xl font-mono font-black tabular-nums tracking-tighter ${isRunning?'text-yellow-400 animate-pulse':time>0&&time<3?'text-green-400':'text-white'}`}>{formatTime(parseFloat(time))}</div>
-                              <div className="flex gap-3 w-full">
-                                <button type="button" onClick={handleStartStop} className={`flex-1 py-4 rounded-xl font-black text-xl shadow-lg transition transform active:scale-95 border-b-4 ${isRunning?'bg-red-500 text-white border-red-700':'bg-green-500 text-slate-900 border-green-700'}`}>{isRunning?'STOP!':'START'}</button>
+                                          {isManualInput ? (
+                                            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 shadow-inner">
+                                              <input 
+                                                type="number" 
+                                                step="0.01" 
+                                                inputMode="decimal"
+                                                value={time===0?'':time} 
+                                                onChange={e=>setTime(e.target.value)} 
+                                                className="w-full text-center text-4xl font-mono font-black bg-transparent text-white outline-none" 
+                                                placeholder="0.00" 
+                                              />
+                                            </div>                                          ) : (
+                                            <div className="bg-slate-900 p-5 rounded-3xl flex flex-col items-center gap-4 border border-slate-700 shadow-inner">
+                                                <div className={`text-5xl font-mono font-black tabular-nums tracking-tighter whitespace-nowrap ${isRunning?'text-yellow-400 animate-pulse':time>0&&time<3?'text-green-400':'text-white'}`}>{formatTime(parseFloat(time))}</div>
+                                                <div className="flex gap-3 w-full">                                <button type="button" onClick={handleStartStop} className={`flex-1 py-4 rounded-xl font-black text-xl shadow-lg transition transform active:scale-95 border-b-4 ${isRunning?'bg-red-500 text-white border-red-700':'bg-green-500 text-slate-900 border-green-700'}`}>{isRunning?'STOP!':'START'}</button>
                                 {!isRunning && time>0 && <button type="button" onClick={handleReset} className="px-6 bg-slate-700 rounded-xl text-white shadow-md active:bg-slate-600 transition border-b-2 border-slate-800">↺</button>}
                               </div>
                           </div>
@@ -347,13 +353,15 @@ function PartyPage() {
                       {a.image_url ? <img src={a.image_url} className="w-10 h-10 rounded-xl object-cover bg-slate-700 border border-slate-600 shadow-sm"/> : <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 text-lg border border-slate-600">👤</div>}
                       <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
                      </div>
-                     <div>
-                       <p className="font-bold text-white text-base leading-tight flex items-center gap-2">
-                         {a.name}
-                         <span className="text-[8px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-600">{attemptNumber}. forsøg</span>
-                       </p>
-                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{a.beer_type} • {formatClock(a.created_at)}</p>
-                     </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-bold text-white text-sm leading-tight flex items-center gap-1.5">
+                                          <span className="truncate">{a.name}</span>
+                                          <span className="text-[8px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-600 shrink-0">
+                                            {attemptNumber}. forsøg
+                                          </span>
+                                        </p>
+                                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5 truncate">{a.beer_type} • {formatClock(a.created_at)}</p>
+                                      </div>
                    </div>
                    <div className="text-right flex items-center gap-3">
                      <span className={`font-mono font-black text-xl ${a.time<3?'text-green-400':'text-slate-200'}`}>{a.time.toFixed(2)}s</span>

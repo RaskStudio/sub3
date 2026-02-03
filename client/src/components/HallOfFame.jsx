@@ -52,9 +52,9 @@ function HallOfFame() {
                      {i===0 && <span className="absolute -top-3 -right-2 text-xl drop-shadow-md rotate-12">👑</span>}
                    </div>
 
-                   <div>
-                     <p className="font-bold text-white text-lg leading-tight">{a.name}</p>
-                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">{a.partyName || 'Ukendt Fest'}</p>
+                   <div className="min-w-0">
+                     <p className="font-bold text-white text-base leading-tight truncate">{a.name}</p>
+                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 truncate">{a.partyName || 'Ukendt Fest'}</p>
                    </div>
                  </div>
 
