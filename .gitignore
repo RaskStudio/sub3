@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+.DS_Store
+
+# Frontend
+client/dist/
+client/.env
+
+# Backend
+server/sub3.db
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Gemini logs
+.gemini/
