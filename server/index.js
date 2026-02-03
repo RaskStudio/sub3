@@ -3,7 +3,6 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const admin = require('firebase-admin');
-const path = require('path');
 
 // --- FIREBASE SETUP ---
 let serviceAccount;
@@ -22,24 +21,17 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 }
 
-let bucket;
-const db = admin.firestore ? admin.firestore() : null; // Initier kun hvis admin virker
 let attemptsCollection;
 
 if (serviceAccount) {
   try {
-    const bucketName = process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`;
-    console.log(`Initializing Firebase with bucket: ${bucketName}`);
-    
+    // Vi bruger KUN databasen nu - ingen Storage Bucket nødvendig!
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: bucketName
+      credential: admin.credential.cert(serviceAccount)
     });
     
-    // Refresh referencer efter init
     attemptsCollection = admin.firestore().collection('attempts');
-    bucket = admin.storage().bucket();
-    console.log('Firebase Admin Initialized successfully.');
+    console.log('Firebase Admin Initialized (Database only).');
   } catch (error) {
     console.error('Firebase Init Error:', error);
   }
@@ -50,9 +42,10 @@ if (serviceAccount) {
 const app = express();
 const port = 3000;
 
+// Multer setup: Memory storage
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // Max 5MB
+  limits: { fileSize: 5 * 1024 * 1024 } 
 });
 
 app.use(cors());
@@ -61,16 +54,20 @@ app.use(bodyParser.json());
 // --- ROUTES ---
 
 app.get('/api/attempts', async (req, res) => {
-  if (!attemptsCollection) return res.status(500).json({error: "Database not connected"});
+  if (!attemptsCollection) return res.status(500).json({error: "Database not connected. Check server logs."});
   
   try {
     const snapshot = await attemptsCollection.orderBy('time', 'asc').get();
     
     const attempts = snapshot.docs.map(doc => {
       const data = doc.data();
+      // Tjek både ny (base64) og gammel (url) metode
+      const imageUrl = data.image_base64 || data.image_url || null;
+      
       return {
         id: doc.id,
         ...data,
+        image_url: imageUrl,
         created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
       };
     });
@@ -83,40 +80,21 @@ app.get('/api/attempts', async (req, res) => {
 });
 
 app.post('/api/attempts', upload.single('image'), async (req, res) => {
-  if (!attemptsCollection) return res.status(500).json({error: "Database not connected"});
+  if (!attemptsCollection) return res.status(500).json({error: "Database not connected. Check server logs."});
 
   try {
     const { name, time, beer_type, method } = req.body;
-    let image_url = null;
-
+    
     if (!name || !time) {
       return res.status(400).json({"error": "Please provide name and time"});
     }
 
-    console.log(`Processing attempt for: ${name}, Time: ${time}`);
-
-    // Prøv at uploade billede - men lad ikke hele requesten fejle hvis det går galt
-    if (req.file && bucket) {
-      try {
-        console.log(`Uploading image (${req.file.size} bytes)...`);
-        const filename = `attempts/${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
-        const file = bucket.file(filename);
-
-        await file.save(req.file.buffer, {
-          metadata: { contentType: req.file.mimetype },
-          resumable: false 
-        });
-
-        // Gør filen offentlig
-        await file.makePublic();
-        image_url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
-        console.log(`Image uploaded to: ${image_url}`);
-      } catch (imgError) {
-        console.error("Image upload failed (continuing without image):", imgError);
-        // Vi fortsætter uden image_url
-      }
-    } else if (req.file && !bucket) {
-      console.warn("Image received but Storage Bucket not initialized.");
+    let imageBase64 = null;
+    
+    // Konverter uploadet fil direkte til Base64 streng
+    if (req.file) {
+      const b64 = req.file.buffer.toString('base64');
+      imageBase64 = `data:${req.file.mimetype};base64,${b64}`;
     }
     
     const newAttempt = {
@@ -124,18 +102,18 @@ app.post('/api/attempts', upload.single('image'), async (req, res) => {
       time: parseFloat(time),
       beer_type: beer_type || 'Ukendt',
       method: method || 'Glas',
-      image_url: image_url,
+      image_base64: imageBase64, // Gem billedet direkte i dokumentet
       created_at: admin.firestore.FieldValue.serverTimestamp()
     };
 
     const docRef = await attemptsCollection.add(newAttempt);
-    console.log(`Attempt saved with ID: ${docRef.id}`);
     
     res.json({
       "message": "success",
       "data": { 
         id: docRef.id, 
         ...newAttempt,
+        image_url: imageBase64,
         created_at: new Date().toISOString() 
       }
     });

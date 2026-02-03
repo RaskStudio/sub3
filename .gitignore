@@ -13,3 +13,4 @@ server/uploads/*
 
 # Gemini logs
 .gemini/
+server/serviceAccountKey.json
