@@ -209,6 +209,26 @@ app.get('/api/halloffame', async (req, res) => {
   }
 });
 
+// PARTICIPANTS (Unikke navne til autocomplete)
+app.get('/api/participants', async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database error"});
+  try {
+    // Hent kun navne-feltet for at spare båndbredde (kræver field mask support eller bare mapning efterfølgende)
+    // Firestore returnerer hele dokumentet uanset, men vi sender kun strings tilbage.
+    const snapshot = await attemptsCollection.orderBy('created_at', 'desc').limit(500).get();
+    
+    const names = new Set();
+    snapshot.forEach(doc => {
+      const name = doc.data().name;
+      if (name) names.add(name);
+    });
+
+    res.json({data: Array.from(names).sort()});
+  } catch (err) {
+    res.status(500).json({error: err.message});
+  }
+});
+
 // ATTEMPTS (Med partyId filter)
 app.get('/api/attempts', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});

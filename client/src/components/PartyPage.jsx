@@ -29,11 +29,15 @@ function PartyPage() {
   const [time, setTime] = useState(0)
   const [isManualInput, setIsManualInput] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
+  const [allNames, setAllNames] = useState([]) // Historiske navne
   const startTimeRef = useRef(null)
   const intervalRef = useRef(null)
   const fileInputRef = useRef(null)
 
   const uniqueParticipants = [...new Set(attempts.map(a => a.name))].sort()
+  
+  // Kombiner festens deltagere med historiske navne til dropdown, fjern dubletter
+  const suggestionList = [...new Set([...uniqueParticipants, ...allNames])].sort()
 
   // Beregn top 3 unikke personer til podiet
   const getTopThreeUnique = () => {
@@ -53,14 +57,18 @@ function PartyPage() {
   const fetchData = async () => {
     if (!partyInfo) setLoading(true)
     try {
-      const [attemptsRes, partyRes] = await Promise.all([
+      const [attemptsRes, partyRes, namesRes] = await Promise.all([
         fetch(`/api/attempts?partyId=${partyId}`),
-        fetch(`/api/parties/${partyId}`)
+        fetch(`/api/parties/${partyId}`),
+        fetch('/api/participants')
       ])
       const attemptsData = await attemptsRes.json()
       const partyData = await partyRes.json()
+      const namesData = await namesRes.json()
+      
       setAttempts(attemptsData.data)
       setPartyInfo(partyData.data)
+      if (namesData.data) setAllNames(namesData.data)
     } catch (error) {
       console.error('Error fetching data:', error)
     } finally {
@@ -277,7 +285,7 @@ function PartyPage() {
                               <style>{`input::-webkit-calendar-picker-indicator { display: none !important; opacity: 0; }`}</style>
                               <input type="text" list="participant-suggestions" value={name} onChange={e => { setName(e.target.value); if (uniqueParticipants.includes(e.target.value)) selectParticipant(e.target.value); }} placeholder="Hvem bunder?" className="w-full h-full pl-4 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-yellow-500 outline-none transition text-base font-medium" required />
                               <datalist id="participant-suggestions">
-                                {uniqueParticipants.map(p => <option key={p} value={p} />)}
+                                {suggestionList.map(p => <option key={p} value={p} />)}
                               </datalist>
                               {imagePreview && (
                                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
