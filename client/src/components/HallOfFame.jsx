@@ -5,7 +5,7 @@ function HallOfFame() {
   const [attempts, setAttempts] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const fetchTop10 = async () => {
+  const fetchHallOfFame = async () => {
     try {
       const res = await fetch('/api/halloffame')
       const data = await res.json()
@@ -14,7 +14,7 @@ function HallOfFame() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchTop10() }, [])
+  useEffect(() => { fetchHallOfFame() }, [])
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 font-sans pb-32">
@@ -22,7 +22,7 @@ function HallOfFame() {
         
         {/* HEADER */}
         <header className="text-center mb-10">
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-yellow-500/50 block mb-2">Global Top 10</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-yellow-500/50 block mb-2">Alle Tider</span>
           <h1 className="text-4xl font-black text-white uppercase tracking-tight">Hall of Fame</h1>
         </header>
 

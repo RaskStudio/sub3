@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import Skeleton from './Skeleton'
+import PinModal from './PinModal'
 
 function PartyPage() {
   const { id: partyId } = useParams()
@@ -15,6 +16,15 @@ function PartyPage() {
   const [loading, setLoading] = useState(true)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [showPinModal, setShowPinModal] = useState(false)
+
+  const handleEditClick = () => {
+    if (isEditMode) {
+      setIsEditMode(false)
+    } else {
+      setShowPinModal(true)
+    }
+  }
 
   const [time, setTime] = useState(0)
   const [isManualInput, setIsManualInput] = useState(false)
@@ -24,6 +34,21 @@ function PartyPage() {
   const fileInputRef = useRef(null)
 
   const uniqueParticipants = [...new Set(attempts.map(a => a.name))].sort()
+
+  // Beregn top 3 unikke personer til podiet
+  const getTopThreeUnique = () => {
+    const bestPerPerson = {};
+    attempts.forEach(a => {
+      if (!bestPerPerson[a.name] || a.time < bestPerPerson[a.name].time) {
+        bestPerPerson[a.name] = a;
+      }
+    });
+    return Object.values(bestPerPerson)
+      .sort((a, b) => a.time - b.time)
+      .slice(0, 3);
+  };
+
+  const topThreeUnique = getTopThreeUnique();
 
   const fetchData = async () => {
     if (!partyInfo) setLoading(true)
@@ -208,12 +233,12 @@ function PartyPage() {
           </>
         ) : (
           <>
-            {attempts.length > 0 ? (
+            {topThreeUnique.length > 0 ? (
               <div className="relative mb-8 px-2">
                 <div className="flex items-end justify-center gap-2">
-                  <PodiumItem attempt={attempts[1]} place={2} />
-                  <PodiumItem attempt={attempts[0]} place={1} />
-                  <PodiumItem attempt={attempts[2]} place={3} />
+                  <PodiumItem attempt={topThreeUnique[1]} place={2} />
+                  <PodiumItem attempt={topThreeUnique[0]} place={1} />
+                  <PodiumItem attempt={topThreeUnique[2]} place={3} />
                 </div>
                 <div className="h-0.5 w-full bg-slate-800 rounded-full mt-0 shadow-inner opacity-50"></div>
               </div>
@@ -311,7 +336,7 @@ function PartyPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center px-1 mb-1">
                 <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Alle Resultater</h2>
-                {attempts.length>0 && <button onClick={()=>setIsEditMode(!isEditMode)} className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full transition border ${isEditMode?'bg-red-500/20 text-red-400 border-red-500/50':'text-slate-500 border-slate-700 hover:border-slate-500'}`}>{isEditMode?'Færdig':'Rediger'}</button>}
+                {attempts.length>0 && <button onClick={handleEditClick} className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full transition border ${isEditMode?'bg-red-500/20 text-red-400 border-red-500/50':'text-slate-500 border-slate-700 hover:border-slate-500'}`}>{isEditMode?'Færdig':'Rediger'}</button>}
               </div>
               {attempts.map((a,i)=>{
                 const personAttempts = attempts.filter(att => att.name === a.name).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
@@ -343,6 +368,12 @@ function PartyPage() {
             </div>
           </>
         )}
+        
+        <PinModal 
+          isOpen={showPinModal} 
+          onClose={() => setShowPinModal(false)} 
+          onSuccess={() => setIsEditMode(true)} 
+        />
       </div>
     </div>
   )

@@ -57,15 +57,47 @@ app.use(bodyParser.json());
 
 // PARTIES
 app.get('/api/parties', async (req, res) => {
-  if (!partiesCollection) return res.status(500).json({error: "Database error"});
+  if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
     // Sorter nyeste fester først
     const snapshot = await partiesCollection.orderBy('created_at', 'desc').get();
-    const parties = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      created_at: doc.data().created_at?.toDate ? doc.data().created_at.toDate().toISOString() : new Date().toISOString()
+    
+    // Hent top 3 for hver fest
+    const parties = await Promise.all(snapshot.docs.map(async doc => {
+      const partyData = doc.data();
+      
+      // Hent attempts for denne fest for at finde top 3
+      // Bemærk: Dette kan optimeres senere ved at gemme top 3 direkte på party-dokumentet ved hver ny rekord
+      const attemptsSnap = await attemptsCollection.where('partyId', '==', doc.id).get();
+      
+      let attempts = attemptsSnap.docs.map(a => ({ id: a.id, ...a.data() }));
+      attempts.sort((a, b) => a.time - b.time);
+
+      // Find unikke deltagere (kun bedste tid tæller)
+      const uniqueAttempts = [];
+      const seenNames = new Set();
+      
+      for (const attempt of attempts) {
+        if (!seenNames.has(attempt.name)) {
+          seenNames.add(attempt.name);
+          const imageUrl = attempt.image_base64 || attempt.image_url || null;
+          uniqueAttempts.push({
+            name: attempt.name,
+            image_url: imageUrl,
+            time: attempt.time
+          });
+        }
+        if (uniqueAttempts.length >= 3) break;
+      }
+
+      return {
+        id: doc.id,
+        ...partyData,
+        created_at: partyData.created_at?.toDate ? partyData.created_at.toDate().toISOString() : new Date().toISOString(),
+        topThree: uniqueAttempts
+      };
     }));
+
     res.json({data: parties});
   } catch (err) {
     res.status(500).json({error: err.message});
@@ -109,15 +141,52 @@ app.get('/api/parties/:id', async (req, res) => {
   }
 });
 
-// HALL OF FAME (Top 10 all time)
+app.delete('/api/parties/:id', async (req, res) => {
+  if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
+  try {
+    const partyId = req.params.id;
+
+    // 1. Slet alle attempts tilknyttet denne fest
+    const attemptsSnapshot = await attemptsCollection.where('partyId', '==', partyId).get();
+    
+    // Brug batch til at slette effektivt (hvis der er mange) eller bare loop
+    const batch = db.batch();
+    attemptsSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    
+    // Slet også selve festen i batchen
+    const partyRef = partiesCollection.doc(partyId);
+    batch.delete(partyRef);
+
+    await batch.commit();
+
+    res.json({message: "Fest og tilhørende tider slettet"});
+  } catch (err) {
+    console.error("DELETE PARTY Error:", err);
+    res.status(500).json({error: err.message});
+  }
+});
+
+// HALL OF FAME (Alle unikke personer all time)
 app.get('/api/halloffame', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
-    const snapshot = await attemptsCollection.orderBy('time', 'asc').limit(10).get();
+    // Hent mange forsøg for at dække alle (limit 500 for sikkerhedsskyld)
+    const snapshot = await attemptsCollection.orderBy('time', 'asc').limit(500).get();
     
-    // Hent også fest-navne så vi kan vise hvor rekorden blev sat
-    const attempts = await Promise.all(snapshot.docs.map(async doc => {
+    const attempts = [];
+    const seenNames = new Set();
+
+    // Hent fest-navne kun for de unikke vi faktisk skal bruge
+    for (const doc of snapshot.docs) {
       const data = doc.data();
+      
+      // Spring over hvis vi allerede har denne person
+      if (seenNames.has(data.name)) continue;
+      
+      seenNames.add(data.name);
+
       let partyName = "Ukendt Fest";
       if (data.partyId && partiesCollection) {
         const partyDoc = await partiesCollection.doc(data.partyId).get();
@@ -125,14 +194,14 @@ app.get('/api/halloffame', async (req, res) => {
       }
 
       const imageUrl = data.image_base64 || data.image_url || null;
-      return {
+      attempts.push({
         id: doc.id,
         ...data,
         partyName, 
         image_url: imageUrl,
         created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
-      };
-    }));
+      });
+    }
 
     res.json({data: attempts});
   } catch (err) {
