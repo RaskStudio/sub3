@@ -25,25 +25,27 @@ let db;
 let attemptsCollection;
 let partiesCollection;
 
-if (serviceAccount) {
+if (serviceAccount && admin.apps.length === 0) {
   try {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-    
-    db = admin.firestore();
-    attemptsCollection = db.collection('attempts');
-    partiesCollection = db.collection('parties');
     console.log('Firebase Admin Initialized.');
   } catch (error) {
     console.error('Firebase Init Error:', error);
   }
+}
+
+if (admin.apps.length > 0) {
+  db = admin.firestore();
+  attemptsCollection = db.collection('attempts');
+  partiesCollection = db.collection('parties');
 } else {
-  console.error("FATAL: No service account credentials found.");
+  console.error("FATAL: No service account credentials found or initialization failed.");
 }
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -277,13 +279,15 @@ app.get('/api/attempts/:id/image', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
     const doc = await attemptsCollection.doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).send("Not found");
+    if (!doc.exists) return res.status(404).send("Attempt not found");
     
     const data = doc.data();
-    const base64Data = data.image_base64;
+    // Tjek begge mulige felter for base64 data
+    const base64Data = data.image_base64 || data.image_url;
     
-    if (!base64Data) return res.status(404).send("No image");
+    if (!base64Data || typeof base64Data !== 'string') return res.status(404).send("No image data found");
 
+    // Hvis det er en data-URL (data:image/jpeg;base64,...), split den
     const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     
     if (matches && matches.length === 3) {
@@ -294,8 +298,14 @@ app.get('/api/attempts/:id/image', async (req, res) => {
       return res.send(buffer);
     }
     
-    res.status(400).send("Invalid image format");
+    // Hvis det bare er en URL (ikke base64), redirect til den (hvis den findes)
+    if (base64Data.startsWith('http')) {
+      return res.redirect(base64Data);
+    }
+    
+    res.status(400).send("Invalid image format or data");
   } catch (err) {
+    console.error("IMAGE FETCH ERROR:", err);
     res.status(500).send(err.message);
   }
 });
@@ -448,8 +458,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error', message: err.message });
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
+}
 
 module.exports = app;
