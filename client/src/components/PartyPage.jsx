@@ -17,6 +17,38 @@ function PartyPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [showPinModal, setShowPinModal] = useState(false)
+  const [allNames, setAllNames] = useState([]) // Historiske navne
+
+  const API_BASE = '/api'
+
+  const fetchData = async () => {
+    if (!partyId) return;
+    try {
+      const [attemptsRes, partyRes, participantsRes] = await Promise.all([
+        fetch(`${API_BASE}/attempts?partyId=${partyId}`),
+        fetch(`${API_BASE}/parties/${partyId}`),
+        fetch(`${API_BASE}/participants`)
+      ]);
+
+      const attemptsJson = await attemptsRes.json();
+      const partyJson = await partyRes.json();
+      const participantsJson = await participantsRes.json();
+
+      setAttempts(attemptsJson.data || []);
+      setPartyInfo(partyJson.data);
+      setAllNames(participantsJson.data || []);
+      setLoading(false);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 15000); // Poll hvert 15. sekund
+    return () => clearInterval(interval);
+  }, [partyId]);
 
   const handleEditClick = () => {
     if (isEditMode) {
@@ -29,7 +61,6 @@ function PartyPage() {
   const [time, setTime] = useState(0)
   const [isManualInput, setIsManualInput] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
-  const [allNames, setAllNames] = useState([]) // Historiske navne
   const startTimeRef = useRef(null)
   const intervalRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -53,30 +84,6 @@ function PartyPage() {
   };
 
   const topThreeUnique = getTopThreeUnique();
-
-  const fetchData = async () => {
-    if (!partyInfo) setLoading(true)
-    try {
-      const [attemptsRes, partyRes, namesRes] = await Promise.all([
-        fetch(`/api/attempts?partyId=${partyId}`),
-        fetch(`/api/parties/${partyId}`),
-        fetch('/api/participants')
-      ])
-      const attemptsData = await attemptsRes.json()
-      const partyData = await partyRes.json()
-      const namesData = await namesRes.json()
-      
-      setAttempts(attemptsData.data)
-      setPartyInfo(partyData.data)
-      if (namesData.data) setAllNames(namesData.data)
-    } catch (error) {
-      console.error('Error fetching data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { fetchData() }, [partyId])
 
   useEffect(() => {
     if (isRunning) {
@@ -164,22 +171,78 @@ function PartyPage() {
       return
     }
     setLoading(true)
-    const formData = new FormData()
-    formData.append('name', name); formData.append('time', time); formData.append('beer_type', beerType);
-    formData.append('method', method); formData.append('partyId', partyId);
-    if (imageFile) formData.append('image', imageFile)
+    
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('time', time);
+    formData.append('beer_type', beerType || 'Ukendt');
+    formData.append('method', method || 'Glas');
+    formData.append('partyId', partyId);
+    if (imageFile) {
+      formData.append('image', imageFile);
+    }
+
     try {
-      await fetch('/api/attempts', { method: 'POST', body: formData })
-      setName(''); setBeerType(''); setMethod('Glas'); setTime(0);
-      setIsRunning(false); setImageFile(null); setImagePreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      setShowForm(false); fetchData();
-    } catch (error) { alert(`Fejl: ${error.message}`) } finally { setLoading(false) }
+      const res = await fetch(`${API_BASE}/attempts`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        setName(''); setBeerType(''); setMethod('Glas'); setTime(0);
+        setIsRunning(false); setImageFile(null); setImagePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        setShowForm(false);
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(`Fejl: ${error.error}`);
+      }
+    } catch (error) { 
+      alert(`Fejl: ${error.message}`) 
+    } finally { 
+      setLoading(false) 
+    }
+  }
+
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [notification, setNotification] = useState(null)
+  const notificationTimeoutRef = useRef(null)
+
+  const showUndoNotification = (message, onUndo) => {
+    if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current)
+    setNotification({ message, onUndo })
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification(null)
+    }, 6000)
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Slet?')) return
-    try { await fetch(`/api/attempts/${id}`, { method: 'DELETE' }); fetchData() } catch (error) { console.error(error) }
+    try {
+      const res = await fetch(`${API_BASE}/attempts/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setAttempts(attempts.filter(a => a.id !== id));
+        showUndoNotification('Forsøg slettet', () => handleRestore(id))
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  const handleRestore = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/attempts/${id}/restore`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        fetchData();
+        setNotification(null)
+      }
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   const formatTime = (t) => t.toFixed(2)
@@ -200,9 +263,12 @@ function PartyPage() {
     return (
       <div className={`w-1/3 flex flex-col items-center justify-end ${orderClass}`}>
         <div className="mb-2 text-center flex flex-col items-center">
-          {attempt.image_url ? (
-            <img src={attempt.image_url} className={`${imgSize} rounded-lg object-cover mb-1 shadow-md bg-slate-800`} />
-          ) : <div className={`${imgSize} rounded-lg bg-slate-700 flex items-center justify-center text-sm mb-1`}>👤</div>}
+          <img 
+            src={`/api/attempts/${attempt.id}/image`} 
+            className={`${imgSize} rounded-lg object-cover mb-1 shadow-md bg-slate-800`}
+            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+          />
+          <div style={{display: 'none'}} className={`${imgSize} rounded-lg bg-slate-700 flex items-center justify-center text-sm mb-1`}>👤</div>
           <p className="font-bold text-white truncate w-20 mx-auto text-[10px] uppercase tracking-wide opacity-80 mb-0 leading-none">{attempt.name}</p>
           <p className={`font-mono font-bold ${attempt.time<3.0?'text-green-400':'text-slate-200'} text-base`}>{attempt.time.toFixed(2)}s</p>
         </div>
@@ -354,8 +420,14 @@ function PartyPage() {
                    <div className="flex items-center gap-3 min-w-0 flex-1">
                      <span className={`text-xl font-black w-6 shrink-0 text-center ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-orange-400':'text-slate-600'}`}>#{i+1}</span>
                      <div className="relative shrink-0">
-                      {a.image_url ? <img src={a.image_url} className="w-10 h-10 rounded-lg object-cover bg-slate-700 border border-slate-600 shadow-sm"/> : <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center text-slate-400 text-lg border border-slate-600">👤</div>}
-                      <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
+                        <img 
+                          src={`/api/attempts/${a.id}/image`} 
+                          onClick={() => setSelectedImage(`/api/attempts/${a.id}/image`)}
+                          className="w-10 h-10 rounded-lg object-cover bg-slate-700 border border-slate-600 shadow-sm cursor-pointer active:scale-95 transition-transform"
+                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                        />
+                        <div style={{display: 'none'}} className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center text-slate-400 text-lg border border-slate-600">👤</div>
+                        <span className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full px-1 py-0 text-[8px] border border-slate-700 shadow-sm">{a.method === 'Glas' ? '🍺' : '🥫'}</span>
                      </div>
                      <div className="min-w-0 flex-1">
                        <p className="font-bold text-white text-sm leading-tight flex items-center gap-1.5">
@@ -382,8 +454,47 @@ function PartyPage() {
           onClose={() => setShowPinModal(false)} 
           onSuccess={() => setIsEditMode(true)} 
         />
+
+        {/* Image Zoom Modal */}
+        {selectedImage && (
+          <div 
+            className="fixed inset-0 bg-slate-950/90 z-[100] flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm"
+            onClick={() => setSelectedImage(null)}
+          >
+            <button 
+              className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-slate-800/50 rounded-full text-white text-2xl z-[110]"
+              onClick={() => setSelectedImage(null)}
+            >✕</button>
+            <img 
+              src={selectedImage} 
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain animate-zoom-in border border-slate-700"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+
+        {/* Undo Notification */}
+        {notification && (
+          <div className="fixed bottom-24 left-4 right-4 z-50 animate-bounce-in">
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center text-red-400">
+                  🗑️
+                </div>
+                <p className="text-white font-bold text-sm">{notification.message}</p>
+              </div>
+              <button 
+                onClick={notification.onUndo}
+                className="bg-yellow-500 text-slate-900 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-yellow-400 transition transform active:scale-95 shadow-md"
+              >
+                Fortryd
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
 export default PartyPage

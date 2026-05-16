@@ -53,53 +53,91 @@ const upload = multer({
 app.use(cors());
 app.use(bodyParser.json());
 
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
 // --- ROUTES ---
 
-// PARTIES
+let partiesCache = null;
+let lastPartiesFetch = 0;
+const CACHE_TTL = 30 * 1000; 
+
+// GET ALL PARTIES
 app.get('/api/parties', async (req, res) => {
   if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
+  
+  if (partiesCache && (Date.now() - lastPartiesFetch < CACHE_TTL)) {
+    return res.json({data: partiesCache, cached: true});
+  }
+
   try {
-    // Sorter nyeste fester først
-    const snapshot = await partiesCollection.orderBy('created_at', 'desc').get();
+    const snapshot = await partiesCollection.get();
     
-    // Hent top 3 for hver fest
-    const parties = await Promise.all(snapshot.docs.map(async doc => {
-      const partyData = doc.data();
-      
-      // Hent attempts for denne fest for at finde top 3
-      // Bemærk: Dette kan optimeres senere ved at gemme top 3 direkte på party-dokumentet ved hver ny rekord
-      const attemptsSnap = await attemptsCollection.where('partyId', '==', doc.id).get();
-      
-      let attempts = attemptsSnap.docs.map(a => ({ id: a.id, ...a.data() }));
-      attempts.sort((a, b) => a.time - b.time);
+    const allAttemptsSnap = await attemptsCollection
+      .select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url')
+      .get();
+    
+    const attemptsByParty = {};
+    const allAttempts = allAttemptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    allAttempts.sort((a, b) => a.time - b.time);
 
-      // Find unikke deltagere (kun bedste tid tæller)
-      const uniqueAttempts = [];
-      const seenNames = new Set();
-      
-      for (const attempt of attempts) {
-        if (!seenNames.has(attempt.name)) {
-          seenNames.add(attempt.name);
-          const imageUrl = attempt.image_base64 || attempt.image_url || null;
-          uniqueAttempts.push({
-            name: attempt.name,
-            image_url: imageUrl,
-            time: attempt.time
-          });
-        }
-        if (uniqueAttempts.length >= 3) break;
+    allAttempts.forEach(data => {
+      if (!attemptsByParty[data.partyId]) {
+        attemptsByParty[data.partyId] = [];
       }
+      attemptsByParty[data.partyId].push(data);
+    });
 
-      return {
-        id: doc.id,
-        ...partyData,
-        created_at: partyData.created_at?.toDate ? partyData.created_at.toDate().toISOString() : new Date().toISOString(),
-        topThree: uniqueAttempts
-      };
-    }));
+    const parties = snapshot.docs
+      .map(doc => {
+        const partyData = doc.data();
+        if (partyData.deleted === true || partyData.deleted === "true") return null;
+        
+        const partyId = doc.id;
+        const attempts = attemptsByParty[partyId] || [];
+        const uniqueAttempts = [];
+        const seenNames = new Set();
+        
+        for (const attempt of attempts) {
+          if (attempt.deleted === true || attempt.deleted === "true") continue;
+          if (!seenNames.has(attempt.name)) {
+            seenNames.add(attempt.name);
+            const imageUrl = attempt.image_url || null; 
+            uniqueAttempts.push({
+              id: attempt.id,
+              name: attempt.name,
+              image_url: imageUrl,
+              time: attempt.time
+            });
+          }
+          if (uniqueAttempts.length >= 3) break;
+        }
+
+        return {
+          id: partyId,
+          ...partyData,
+          created_at: partyData.created_at?.toDate ? partyData.created_at.toDate().toISOString() : new Date().toISOString(),
+          topThree: uniqueAttempts
+        };
+      })
+      .filter(p => p !== null);
+
+    parties.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    partiesCache = parties;
+    lastPartiesFetch = Date.now();
 
     res.json({data: parties});
   } catch (err) {
+    console.error("GET PARTIES Error:", err);
     res.status(500).json({error: err.message});
   }
 });
@@ -112,10 +150,12 @@ app.post('/api/parties', async (req, res) => {
     
     const newParty = {
       name,
+      deleted: false,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     };
     
     const docRef = await partiesCollection.add(newParty);
+    partiesCache = null; 
     res.json({data: {id: docRef.id, ...newParty}});
   } catch (err) {
     res.status(500).json({error: err.message});
@@ -126,7 +166,7 @@ app.get('/api/parties/:id', async (req, res) => {
   if (!partiesCollection) return res.status(500).json({error: "Database error"});
   try {
     const doc = await partiesCollection.doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({error: "Fest findes ikke"});
+    if (!doc.exists || doc.data().deleted) return res.status(404).json({error: "Fest findes ikke"});
     
     const data = doc.data();
     res.json({
@@ -145,124 +185,185 @@ app.delete('/api/parties/:id', async (req, res) => {
   if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
     const partyId = req.params.id;
-
-    // 1. Slet alle attempts tilknyttet denne fest
+    const batch = db.batch();
     const attemptsSnapshot = await attemptsCollection.where('partyId', '==', partyId).get();
     
-    // Brug batch til at slette effektivt (hvis der er mange) eller bare loop
-    const batch = db.batch();
     attemptsSnapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
+      batch.update(doc.ref, { deleted: true, deleted_at: admin.firestore.FieldValue.serverTimestamp() });
     });
     
-    // Slet også selve festen i batchen
-    const partyRef = partiesCollection.doc(partyId);
-    batch.delete(partyRef);
-
+    batch.update(partiesCollection.doc(partyId), { deleted: true, deleted_at: admin.firestore.FieldValue.serverTimestamp() });
     await batch.commit();
 
-    res.json({message: "Fest og tilhørende tider slettet"});
+    partiesCache = null; 
+    res.json({message: "Fest og tilhørende tider markeret som slettet"});
   } catch (err) {
     console.error("DELETE PARTY Error:", err);
     res.status(500).json({error: err.message});
   }
 });
 
-// HALL OF FAME (Alle unikke personer all time)
+app.post('/api/parties/:id/restore', async (req, res) => {
+  if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
+  try {
+    const partyId = req.params.id;
+    const batch = db.batch();
+    batch.update(partiesCollection.doc(partyId), { deleted: false, restored_at: admin.firestore.FieldValue.serverTimestamp() });
+    const attemptsSnapshot = await attemptsCollection.where('partyId', '==', partyId).get();
+    attemptsSnapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { deleted: false });
+    });
+    await batch.commit();
+    partiesCache = null; 
+    res.json({message: "Fest gendannet"});
+  } catch (err) {
+    res.status(500).json({error: err.message});
+  }
+});
+
+// HALL OF FAME
 app.get('/api/halloffame', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
-    // Hent mange forsøg for at dække alle (limit 500 for sikkerhedsskyld)
-    const snapshot = await attemptsCollection.orderBy('time', 'asc').limit(500).get();
+    const snapshot = await attemptsCollection
+      .select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url')
+      .get();
     
+    const allAttempts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    allAttempts.sort((a, b) => a.time - b.time);
+
+    const partiesMap = {};
+    const partiesSnap = await partiesCollection.get();
+    partiesSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.deleted !== true && d.deleted !== "true") {
+        partiesMap[doc.id] = d.name;
+      }
+    });
+
     const attempts = [];
     const seenNames = new Set();
 
-    // Hent fest-navne kun for de unikke vi faktisk skal bruge
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      
-      // Spring over hvis vi allerede har denne person
+    for (const data of allAttempts) {
+      if (data.deleted === true || data.deleted === "true") continue;
       if (seenNames.has(data.name)) continue;
       
+      const partyName = partiesMap[data.partyId];
+      if (data.partyId && !partyName) continue; 
+
       seenNames.add(data.name);
 
-      let partyName = "Ukendt Fest";
-      if (data.partyId && partiesCollection) {
-        const partyDoc = await partiesCollection.doc(data.partyId).get();
-        if (partyDoc.exists) partyName = partyDoc.data().name;
-      }
-
-      const imageUrl = data.image_base64 || data.image_url || null;
       attempts.push({
-        id: doc.id,
-        ...data,
-        partyName, 
-        image_url: imageUrl,
+        id: data.id,
+        name: data.name,
+        time: data.time,
+        partyId: data.partyId,
+        partyName: partyName || "Ukendt Fest", 
         created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
       });
+      
+      if (attempts.length >= 50) break;
     }
 
     res.json({data: attempts});
   } catch (err) {
+    console.error("HOF Error:", err);
     res.status(500).json({error: err.message});
   }
 });
 
-// PARTICIPANTS (Unikke navne til autocomplete)
-app.get('/api/participants', async (req, res) => {
+// IMAGE ENDPOINT
+app.get('/api/attempts/:id/image', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
-    // Hent kun navne-feltet for at spare båndbredde (kræver field mask support eller bare mapning efterfølgende)
-    // Firestore returnerer hele dokumentet uanset, men vi sender kun strings tilbage.
-    const snapshot = await attemptsCollection.orderBy('created_at', 'desc').limit(500).get();
+    const doc = await attemptsCollection.doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).send("Not found");
+    
+    const data = doc.data();
+    const base64Data = data.image_base64;
+    
+    if (!base64Data) return res.status(404).send("No image");
+
+    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    
+    if (matches && matches.length === 3) {
+      const type = matches[1];
+      const buffer = Buffer.from(matches[2], 'base64');
+      res.set('Content-Type', type);
+      res.set('Cache-Control', 'public, max-age=86400');
+      return res.send(buffer);
+    }
+    
+    res.status(400).send("Invalid image format");
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// PARTICIPANTS
+let participantsCache = null;
+let lastParticipantsFetch = 0;
+
+app.get('/api/participants', async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database error"});
+  
+  if (participantsCache && (Date.now() - lastParticipantsFetch < CACHE_TTL)) {
+    return res.json({data: participantsCache, cached: true});
+  }
+
+  try {
+    const snapshot = await attemptsCollection.select('name', 'deleted').get();
     
     const names = new Set();
     snapshot.forEach(doc => {
-      const name = doc.data().name;
-      if (name) names.add(name);
+      const data = doc.data();
+      if (data.deleted !== true && data.deleted !== "true") {
+        if (data.name) names.add(data.name);
+      }
     });
 
-    res.json({data: Array.from(names).sort()});
+    participantsCache = Array.from(names).sort();
+    lastParticipantsFetch = Date.now();
+
+    res.json({data: participantsCache});
   } catch (err) {
     res.status(500).json({error: err.message});
   }
 });
 
-// ATTEMPTS (Med partyId filter)
+// ATTEMPTS
 app.get('/api/attempts', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   
   try {
     const { partyId } = req.query;
     
-    let query = attemptsCollection;
+    let dbQuery = attemptsCollection.select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url', 'beer_type', 'method');
+    
     if (partyId) {
-      query = query.where('partyId', '==', partyId);
+      dbQuery = dbQuery.where('partyId', '==', partyId);
     }
     
-    // Vi sorterer client-side eller med composite index hvis nødvendigt, 
-    // men for simpelthedens skyld henter vi bare og sorterer i memory hvis filter er på,
-    // fordi Firestore kræver index for .where().orderBy()
-    const snapshot = await query.get();
+    const snapshot = await dbQuery.get();
     
-    let attempts = snapshot.docs.map(doc => {
-      const data = doc.data();
-      const imageUrl = data.image_base64 || data.image_url || null;
-      return {
-        id: doc.id,
-        ...data,
-        image_url: imageUrl,
-        created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
-      };
-    });
+    let attempts = snapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        if (data.deleted === true || data.deleted === "true") return null;
 
-    // Sortér manuelt her for at undgå index-krav i Firestore lige nu
+        return {
+          id: doc.id,
+          ...data,
+          created_at: data.created_at ? (data.created_at.toDate ? data.created_at.toDate().toISOString() : data.created_at) : new Date().toISOString(),
+        };
+      })
+      .filter(a => a !== null);
+
     attempts.sort((a, b) => a.time - b.time);
 
     res.json({ "message": "success", "data": attempts });
   } catch (err) {
-    console.error("GET Error:", err);
+    console.error("GET ATTEMPTS Error:", err);
     res.status(500).json({"error": err.message});
   }
 });
@@ -288,13 +389,17 @@ app.post('/api/attempts', upload.single('image'), async (req, res) => {
       time: parseFloat(time),
       beer_type: beer_type || 'Ukendt',
       method: method || 'Glas',
-      partyId: partyId || null, // Gem hvilket fest det hører til
+      partyId: partyId || null, 
       image_base64: imageBase64,
+      deleted: false,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     };
 
     const docRef = await attemptsCollection.add(newAttempt);
     
+    participantsCache = null;
+    partiesCache = null;
+
     res.json({
       "message": "success",
       "data": { 
@@ -314,17 +419,37 @@ app.delete('/api/attempts/:id', async (req, res) => {
   if (!attemptsCollection) return res.status(500).json({error: "Database error"});
   try {
     const id = req.params.id;
-    await attemptsCollection.doc(id).delete();
+    await attemptsCollection.doc(id).update({ 
+      deleted: true, 
+      deleted_at: admin.firestore.FieldValue.serverTimestamp() 
+    });
+    partiesCache = null;
     res.json({"message": "deleted"});
   } catch (err) {
     res.status(500).json({"error": err.message});
   }
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-  });
-}
+app.post('/api/attempts/:id/restore', async (req, res) => {
+  if (!attemptsCollection) return res.status(500).json({error: "Database error"});
+  try {
+    const id = req.params.id;
+    await attemptsCollection.doc(id).update({ deleted: false });
+    partiesCache = null;
+    res.json({"message": "restored"});
+  } catch (err) {
+    res.status(500).json({"error": err.message});
+  }
+});
+
+// GLOBAL ERROR HANDLER
+app.use((err, req, res, next) => {
+  console.error('SERVER ERROR:', err);
+  res.status(500).json({ error: 'Internal Server Error', message: err.message });
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
 
 module.exports = app;
