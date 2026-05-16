@@ -9,15 +9,21 @@ let serviceAccount;
 
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
+    // Forsøg at dekode fra base64 først
     serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8'));
   } catch (e) {
-    console.error('CRITICAL ERROR: Failed to parse FIREBASE_SERVICE_ACCOUNT base64 string.', e);
+    try {
+      // Hvis det fejler, er det måske bare rå JSON
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e2) {
+      console.error('CRITICAL ERROR: Failed to parse FIREBASE_SERVICE_ACCOUNT.', e2);
+    }
   }
 } else {
   try {
     serviceAccount = require('./serviceAccountKey.json');
   } catch (e) {
-    console.log('Running locally without ENV variable (looking for serviceAccountKey.json).');
+    console.log('Running locally without ENV variable.');
   }
 }
 
@@ -40,8 +46,6 @@ if (admin.apps.length > 0) {
   db = admin.firestore();
   attemptsCollection = db.collection('attempts');
   partiesCollection = db.collection('parties');
-} else {
-  console.error("FATAL: No service account credentials found or initialization failed.");
 }
 
 const app = express();
@@ -73,7 +77,7 @@ const CACHE_TTL = 30 * 1000;
 
 // GET ALL PARTIES
 app.get('/api/parties', async (req, res) => {
-  if (!partiesCollection || !attemptsCollection) return res.status(500).json({error: "Database error"});
+  if (!partiesCollection) return res.status(500).json({error: "Database error: partiesCollection not initialized"});
   
   if (partiesCache && (Date.now() - lastPartiesFetch < CACHE_TTL)) {
     return res.json({data: partiesCache, cached: true});
@@ -81,7 +85,6 @@ app.get('/api/parties', async (req, res) => {
 
   try {
     const snapshot = await partiesCollection.get();
-    
     const allAttemptsSnap = await attemptsCollection
       .select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url')
       .get();
@@ -112,11 +115,10 @@ app.get('/api/parties', async (req, res) => {
           if (attempt.deleted === true || attempt.deleted === "true") continue;
           if (!seenNames.has(attempt.name)) {
             seenNames.add(attempt.name);
-            const imageUrl = attempt.image_url || null; 
             uniqueAttempts.push({
               id: attempt.id,
               name: attempt.name,
-              image_url: imageUrl,
+              image_url: attempt.image_url || null,
               time: attempt.time
             });
           }
@@ -282,12 +284,10 @@ app.get('/api/attempts/:id/image', async (req, res) => {
     if (!doc.exists) return res.status(404).send("Attempt not found");
     
     const data = doc.data();
-    // Tjek begge mulige felter for base64 data
     const base64Data = data.image_base64 || data.image_url;
     
-    if (!base64Data || typeof base64Data !== 'string') return res.status(404).send("No image data found");
+    if (!base64Data || typeof base64Data !== 'string') return res.status(404).send("No image data");
 
-    // Hvis det er en data-URL (data:image/jpeg;base64,...), split den
     const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     
     if (matches && matches.length === 3) {
@@ -298,12 +298,11 @@ app.get('/api/attempts/:id/image', async (req, res) => {
       return res.send(buffer);
     }
     
-    // Hvis det bare er en URL (ikke base64), redirect til den (hvis den findes)
     if (base64Data.startsWith('http')) {
       return res.redirect(base64Data);
     }
     
-    res.status(400).send("Invalid image format or data");
+    res.status(400).send("Invalid image format");
   } catch (err) {
     console.error("IMAGE FETCH ERROR:", err);
     res.status(500).send(err.message);
