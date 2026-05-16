@@ -77,7 +77,14 @@ const CACHE_TTL = 30 * 1000;
 
 // GET ALL PARTIES
 app.get('/api/parties', async (req, res) => {
-  if (!partiesCollection) return res.status(500).json({error: "Database error: partiesCollection not initialized"});
+  if (!partiesCollection) {
+    return res.status(500).json({
+      error: "Database not initialized", 
+      details: "partiesCollection is undefined",
+      hasServiceAccount: !!serviceAccount,
+      appsCount: admin.apps.length
+    });
+  }
   
   if (partiesCache && (Date.now() - lastPartiesFetch < CACHE_TTL)) {
     return res.json({data: partiesCache, cached: true});
@@ -85,6 +92,8 @@ app.get('/api/parties', async (req, res) => {
 
   try {
     const snapshot = await partiesCollection.get();
+    if (!attemptsCollection) throw new Error("attemptsCollection not initialized");
+
     const allAttemptsSnap = await attemptsCollection
       .select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url')
       .get();
@@ -227,7 +236,14 @@ app.post('/api/parties/:id/restore', async (req, res) => {
 
 // HALL OF FAME
 app.get('/api/halloffame', async (req, res) => {
-  if (!attemptsCollection) return res.status(500).json({error: "Database error"});
+  if (!attemptsCollection) {
+    return res.status(500).json({
+      error: "Database not initialized", 
+      details: "attemptsCollection is undefined",
+      hasServiceAccount: !!serviceAccount,
+      appsCount: admin.apps.length
+    });
+  }
   try {
     const snapshot = await attemptsCollection
       .select('name', 'time', 'partyId', 'deleted', 'created_at', 'image_url')
@@ -237,6 +253,7 @@ app.get('/api/halloffame', async (req, res) => {
     allAttempts.sort((a, b) => a.time - b.time);
 
     const partiesMap = {};
+    if (!partiesCollection) throw new Error("partiesCollection not initialized");
     const partiesSnap = await partiesCollection.get();
     partiesSnap.forEach(doc => {
       const d = doc.data();
@@ -314,7 +331,14 @@ let participantsCache = null;
 let lastParticipantsFetch = 0;
 
 app.get('/api/participants', async (req, res) => {
-  if (!attemptsCollection) return res.status(500).json({error: "Database error"});
+  if (!attemptsCollection) {
+    return res.status(500).json({
+      error: "Database not initialized", 
+      details: "attemptsCollection is undefined (participants)",
+      hasServiceAccount: !!serviceAccount,
+      appsCount: admin.apps.length
+    });
+  }
   
   if (participantsCache && (Date.now() - lastParticipantsFetch < CACHE_TTL)) {
     return res.json({data: participantsCache, cached: true});
